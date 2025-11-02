@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Control Aeropuerto — v6</title>
+<style>
+/* ========== Design tokens ========== */
+:root{
+  --bg:#ffffff; --fg:#111827; --muted:#6b7280; --line:#e5e7eb; --chip:#f3f4f6;
+  --brand:#0b5fff; --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
+  --stickyPad:0px;                 /* padding superior real del contenedor con scroll */
+  --cell-pad-y:6px; --cell-pad-x:8px; --min-col:110px;  /* densidad: Cómodo */
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:13.5px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+
+/* Densidades */
+body.compacto{ --cell-pad-y:4px; --cell-pad-x:6px; --min-col:92px }
+body.ultra{ --cell-pad-y:2px; --cell-pad-x:4px; --min-col:76px }
+
+/* Header */
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);z-index:30}
+.wrap{max-width:1200px;margin:0 auto;padding:8px 14px}
+.title{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:24px}
+.badge{background:var(--chip);border:1px solid var(--line);padding:4px 8px;border-radius:999px;font-weight:600;font-size:12px}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+button{
+  border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:10px;cursor:pointer;font-size:13px
+}
+button:hover{border-color:var(--brand)}
+.btn-ghost{background:#fff}
+.btn-danger{background:#fee2e2;border-color:#fecaca;color:#b91c1c}
+.btn-primary{background:var(--brand);color:#fff;border:1px solid var(--brand)}
+input[type="text"],input[type="date"],select{border:1px solid var(--line);padding:6px 8px;border-radius:10px;min-width:160px;font-size:13px}
+.hint{font-size:12px;color:var(--muted)}
+.note{color:var(--muted);padding:6px 14px;border-bottom:1px solid var(--line)}
+
+/* Top toolbar extra */
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.tools .group{display:flex;gap:6px;align-items:center}
+
+/* Tabla */
+.table-wrap{overflow:auto;border-top:1px solid var(--line);padding-top:var(--stickyPad)}
+table{width:100%;border-collapse:separate;border-spacing:0}
+th,td{padding:var(--cell-pad-y) var(--cell-pad-x);white-space:nowrap;border-bottom:1px solid var(--line)}
+thead th{
+  position:sticky;top:0;background:#fff;z-index:12;font-size:12px;color:var(--muted);text-align:left;
+  min-width:var(--min-col)
+}
+tbody tr:hover{background:#fafafa}
+
+/* Chips */
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 8px;font-weight:600;font-size:12px}
+.pill.green{background:#ecfdf5;color:var(--ok);border:1px solid #bbf7d0}
+.pill.yellow{background:#fffbeb;color:var(--warn);border:1px solid #fde68a}
+.pill.red{background:#fef2f2;color:var(--bad);border:1px solid #fecaca}
+
+.editable{background:#fffdf7;border:1px dashed #f5d48b;padding:4px 6px;border-radius:8px;width:180px;font-size:13px}
+.center{text-align:center}
+
+/* FAB */
+.fab{position:fixed;right:16px;bottom:16px;z-index:40}
+
+/* Modal genérico */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.28);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;max-width:980px;width:96%;padding:14px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.grid label{font-size:12px;color:var(--muted)}
+.grid input,.grid select{width:100%}
+.row{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px}
+@media (max-width:1000px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* ======= Panel Columnas & Freeze ======= */
+.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:14px;flex-wrap:wrap}
+.panel h4{margin:0 0 6px 0}
+.small{font-size:12px;color:var(--muted)}
+.col-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+@media (max-width:600px){ .col-list{grid-template-columns:1fr} }
+
+/* ======= Redimensionador ======= */
+.th-resize{position:absolute;top:0;right:-3px;width:6px;cursor:col-resize;user-select:none;height:100%}
+th{position:sticky}
+th .label{position:relative;padding-right:10px}
+th{background-clip:padding-box}
+
+/* Barra fila activa */
+.activebar{position:sticky;top:0;transform:translateY(calc(var(--stickyPad)*-1)); /* queda justo bajo header */
+  z-index:20;background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(6px);border-bottom:1px solid var(--line);
+  padding:4px 14px;display:none;align-items:center;gap:8px
+}
+.activebar.show{display:flex}
+.activebar strong{font-weight:700}
+
+/* Impresión limpia */
+@media print{
+  header,.tools,.fab{display:none!important}
+  .table-wrap{padding-top:0!important}
+}
+
+</style>
+</head>
+<body class="comodo">
+<header>
+  <div class="wrap">
+    <div class="title">
+      <h1>Control Aeropuerto</h1>
+      <span class="badge">Empresa: Sura</span>
+      <span class="badge">Vuelo de Ida: AM 0668 · MEX–SFO · 08:55–11:55 · 03/11/2025</span>
+      <span class="badge">Regreso: AM 0665 · SFO–MEX · 07/11/2025</span>
+    </div>
+    <div class="actions">
+      <input id="search" type="text" placeholder="Buscar (nombre, apellidos, localizador...)"/>
+      <select id="filtroSemaforo"><option value="">Semáforo (todos)</option><option value="verde">Verde</option><option value="amarillo">Amarillo</option><option value="rojo">Rojo</option></select>
+      <select id="filtroAsistencia"><option value="">Asistencia (todos)</option><option value="Sí">Sí</option><option value="No">No</option></select>
+      <select id="filtroMigracion"><option value="">Migración (todos)</option><option value="Sí">Sí</option><option value="No">No</option></select>
+      <button id="btnExport">Exportar CSV</button>
+      <button onclick="window.print()">Imprimir</button>
+      <span class="hint" id="count"></span>
+    </div>
+
+    <!-- Herramientas nuevas -->
+    <div class="tools">
+      <div class="group">
+        <button id="btnImport">Importar Excel/CSV</button>
+        <button id="btnCols">Columnas</button>
+        <label class="small">Densidad:</label>
+        <select id="density">
+          <option value="comodo">Cómodo</option>
+          <option value="compacto">Compacto</option>
+          <option value="ultra">Ultra</option>
+        </select>
+      </div>
+      <div class="group small" id="kpis"></div>
+    </div>
+  </div>
+</header>
+
+<div class="note wrap" id="note">
+  Checklist activo: <strong>1) Asistencia</strong> · <strong>2) Migración</strong> · Campos editables: Pasaporte y Notas.
+</div>
+
+<!-- Barra fila activa -->
+<div class="activebar" id="activebar">
+  <span class="small">Fila activa:</span> <strong id="barName"></strong> <span id="barClave" class="small"></span>
+</div>
+
+<!-- Tabla -->
+<div class="table-wrap wrap" id="tableWrap">
+  <table id="grid">
+    <thead>
+      <tr id="theadRow"></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<!-- FAB -->
+<div class="fab"><button class="btn-primary" id="btnAdd">➕ Agregar pasajero</button></div>
+
+<!-- Modal: Agregar/Editar -->
+<div class="modal" id="modal">
+  <div class="card">
+    <h3 id="formTitle" style="margin:0 0 8px 0">Nuevo pasajero</h3>
+    <div class="grid">
+      <div><label>Nombre</label><input id="fNombre" type="text" required></div>
+      <div><label>Apellido paterno</label><input id="fAp" type="text" required></div>
+      <div><label>Apellido materno</label><input id="fAm" type="text"></div>
+      <div><label>Fecha nacimiento</label><input id="fFn" type="date"></div>
+
+      <div><label>Fecha salida</label><input id="fFs" type="text" placeholder="DD/MM/AAAA"></div>
+      <div><label>Vuelo ida</label><input id="fVid" type="text" placeholder="AM 0668"></div>
+      <div><label>Ruta ida</label><input id="fRid" type="text" placeholder="MEX-SFO"></div>
+      <div><label>Hora ida</label><input id="fHid" type="text" placeholder="08:55-11:55"></div>
+
+      <div><label>Fecha regreso</label><input id="fFr" type="text" placeholder="DD/MM/AAAA"></div>
+      <div><label>Vuelo regreso</label><input id="fVr" type="text" placeholder="AM 0665"></div>
+      <div><label>Ruta regreso</label><input id="fRr" type="text" placeholder="SFO-MEX"></div>
+      <div><label>Hora regreso</label><input id="fHr" type="text" placeholder="22:52-05:15"></div>
+
+      <div><label>Clave (localizador)</label><input id="fClave" type="text"></div>
+      <div><label>Pasaporte</label><input id="fPasaporte" type="text"></div>
+      <div><label>Asistencia</label><select id="fAsistencia"><option>No</option><option>Sí</option></select></div>
+      <div><label>Migración</label><select id="fMigracion"><option>No</option><option>Sí</option></select></div>
+      <div style="grid-column:1/5"><label>Notas</label><input id="fNotas" type="text"></div>
+    </div>
+    <div class="row">
+      <button class="btn-ghost" id="fCancel">Cancelar</button>
+      <button class="btn-primary" id="fSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Importar -->
+<div class="modal" id="modalImport">
+  <div class="card">
+    <h3 style="margin:0 0 8px 0">Importar Excel / CSV</h3>
+    <div class="small" style="margin-bottom:8px">
+      Sube tu archivo. Si es <strong>.xlsx</strong> y no hay lector de Excel embebido, te pediré usar <strong>.csv</strong> por esta versión.
+    </div>
+    <input id="fileInput" type="file" accept=".xlsx,.csv" />
+    <div id="importStage" style="margin-top:10px; display:none">
+      <h4 style="margin:10px 0 6px 0">Mapeo de columnas</h4>
+      <div class="panel">
+        <div>
+          <h4>Campos del sistema</h4>
+          <div class="small">Selecciona de qué columna del archivo viene cada dato.</div>
+          <div id="mapList" class="col-list" style="margin-top:8px"></div>
+          <div class="small" style="margin-top:8px">Guarda como plantilla: <input id="tplName" type="text" placeholder="Formato Extranjero v2" style="min-width:220px"/></div>
+        </div>
+        <div>
+          <h4>Vista previa</h4>
+          <div id="preview" class="small"></div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn-ghost" id="impCancel">Cancelar</button>
+        <button class="btn-primary" id="impApply">Importar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Columnas (freeze + visibles + presets) -->
+<div class="modal" id="modalCols">
+  <div class="card">
+    <h3 style="margin:0 0 8px 0">Columnas y congelado</h3>
+    <div class="panel">
+      <div>
+        <h4>Congelar columnas</h4>
+        <div class="small">Palomea las que quieras mantener fijas a la izquierda.</div>
+        <div id="freezeList" class="col-list" style="margin-top:8px"></div>
+      </div>
+      <div>
+        <h4>Visibilidad rápida</h4>
+        <div class="small">Muestra/oculta columnas opcionales (Notas, Clave, etc.).</div>
+        <div id="visibleList" class="col-list" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn-ghost" id="colsCancel">Cerrar</button>
+      <button class="btn-primary" id="colsApply">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== Datos base ===================== */
+const BASE_FLIGHT={fs:"03/11/2025",vid:"AM 0668",rid:"MEX-SFO",hid:"08:55-11:55",fr:"07/11/2025",vr:"AM 0665",rr:"SFO-MEX",hr:"22:52-05:15"};
+const base=[
+ [1,"ADOLFO","ARDITTI","BEJARANO","1970-09-02",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"GZDOXH"],
+ [2,"ALEJANDRO","MUZQUIZ","DIAZ","1972-04-13",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [3,"Anayeli Guadalupe","Rodríguez","Cardenas","1986-12-11",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG/UDSTQO"],
+ [4,"Diana","Bernal","Chavez","1988-01-15",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [5,"Elizabeth","Ruiz","Domínguez","1984-10-08",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [6,"ELIZABETH BELEM","MUNGUÍA","LUGO","1975-03-01",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG/NFTUMS"],
+ [7,"FRANCISCO OMAR","MURIANO","FLORES","1979-06-25",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [8,"Jannelle","Domínguez","Cruz","1979-06-25",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [9,"JULIETA","FLORES","HERNANDEZ","1974-07-30",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG/NFTUMS"],
+ [10,"Luis Gerardo","Valdés","Manzano","1970-05-13",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [11,"María violeta","martinez","altamirano","1975-12-21",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [12,"MARIA CRISTINA","GONZÁLEZ","GUERRERO","1968-02-29",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG/HQIRXG"],
+ [13,"MARIA Yolanda","TERREROS","PEREZ","1969-09-11",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"LKEUJT"],
+ [14,"Nancy","Copca","Lopez","1969-09-11",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [15,"Ricardo","Angel","Sevilla","1978-05-29",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [16,"Ricardo","Benitez","Iturbide","1989-03-12",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"ICQOPR"],
+ [17,"Ruth","Jacqueline","Garcia","1987-09-08",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [18,"SILVIA SOCORRO","RODRÍGUEZ","MOLINA","1978-08-23",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"],
+ [19,"YAZMIN RAQUEL","PONCE","REYNOSO","",BASE_FLIGHT.fs,BASE_FLIGHT.vid,BASE_FLIGHT.rid,BASE_FLIGHT.hid,BASE_FLIGHT.fr,BASE_FLIGHT.vr,BASE_FLIGHT.rr,BASE_FLIGHT.hr,"HKHGVG"]
+];
+
+/* ===================== Estado & utilidades ===================== */
+const STORE_KEY="control_aeropuerto_v6";
+let state=load();
+function load(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); }catch{ return {}; } }
+function save(){ localStorage.setItem(STORE_KEY,JSON.stringify(state)); }
+state.checks=state.checks||{};     // {no:{pasaporte,asistencia,migracion,notas}}
+state.extras=state.extras||[];     // filas nuevas
+state.overrides=state.overrides||{};// {no:[fila]}
+state.deleted=state.deleted||{};   // {no:true}
+state.cols=state.cols||{visible:{}, frozen:{}, widths:{}};
+state.tpls=state.tpls||{};         // {tplName: mapping}
+state.density=state.density||"comodo";
+
+const COLS=[
+  {key:"no",label:"#",fixed:true},
+  {key:"nombre",label:"NOMBRE"},
+  {key:"ap",label:"APELLIDO PATERNO"},
+  {key:"am",label:"APELLIDO MATERNO"},
+  {key:"fn",label:"FECHA NAC."},
+  {key:"fs",label:"FECHA SALIDA"},
+  {key:"vid",label:"VUELO IDA"},
+  {key:"rid",label:"RUTA IDA"},
+  {key:"hid",label:"HORA IDA"},
+  {key:"fr",label:"FECHA REGRESO"},
+  {key:"vr",label:"VUELO REGRESO"},
+  {key:"rr",label:"RUTA REGRESO"},
+  {key:"hr",label:"HORA REGRESO"},
+  {key:"clave",label:"CLAVE"},
+  {key:"pasaporte",label:"PASAPORTE",type:"input"},
+  {key:"asistencia",label:"ASIST.",type:"check",center:true},
+  {key:"migracion",label:"MIGR.",type:"check",center:true},
+  {key:"semaforo",label:"SEMÁFORO",render:"semaforo"},
+  {key:"notas",label:"NOTAS",type:"input"},
+  {key:"acciones",label:"ACCIONES",render:"acciones"}
+];
+
+function normalize(s){return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim()}
+function matchesQuery(obj,q){if(!q)return true;const h=normalize(Object.values(obj).join(" "));return normalize(q).split(" ").every(t=>h.includes(t))}
+function semColor(a,m){ if(a&&m) return "green"; if(a||m) return "yellow"; return "red"; }
+
+function rows(){
+  const byNo={}; for(const r of base) byNo[r[0]]=r;
+  for(const r of state.extras) byNo[r[0]]=r;
+  for(const k of Object.keys(state.overrides)) byNo[+k]=state.overrides[k];
+  for(const k of Object.keys(state.deleted)) if(state.deleted[k]) delete byNo[+k];
+  return Object.values(byNo).sort((a,b)=>a[0]-b[0]);
+}
+
+/* ===================== Construcción de tabla ===================== */
+const theadRow=document.getElementById("theadRow");
+const tbody=document.getElementById("tbody");
+const activebar=document.getElementById("activebar");
+const barName=document.getElementById("barName");
+const barClave=document.getElementById("barClave");
+
+function buildHead(){
+  theadRow.innerHTML="";
+  COLS.forEach((c,i)=>{
+    if(state.cols.visible[c.key]===false) return;
+    const th=document.createElement("th");
+    th.dataset.key=c.key;
+    const label=document.createElement("div");
+    label.className="label"; label.textContent=c.label;
+    th.appendChild(label);
+
+    // handle redimensionar
+    if(c.key!=="acciones"){ // no resize en acciones
+      const grip=document.createElement("span");
+      grip.className="th-resize"; th.appendChild(grip);
+      let startX,startW;
+      grip.addEventListener("dblclick",(e)=>{autoFitColumn(c.key);});
+      grip.addEventListener("mousedown",(e)=>{
+        if (e.buttons!==1) return;
+        startX=e.clientX; startW=th.offsetWidth;
+        const move=(ev)=>{ const dx=ev.clientX-startX; const w=Math.max(60,startW+dx); setColWidth(c.key,w); layoutFrozen(); };
+        const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); save(); };
+        document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
+      });
+    }
+    // ancho guardado
+    const w=state.cols.widths[c.key]; if(w) th.style.minWidth=w+"px", th.style.width=w+"px";
+
+    theadRow.appendChild(th);
+  });
+  layoutFrozen();
+}
+
+function autoFitColumn(key){
+  // medir hasta 50 filas visibles
+  const idx=visibleColIndex(key);
+  if(idx<0) return;
+  const cells=[...tbody.querySelectorAll(`tr td:nth-child(${idx+1})`)].slice(0,50);
+  const th=theadRow.children[idx];
+  let max=th.querySelector(".label").offsetWidth+24;
+  cells.forEach(td=>{ max=Math.max(max, td.scrollWidth+16); });
+  setColWidth(key,Math.min(Math.max(60,max),500)); save(); layoutFrozen();
+}
+function setColWidth(key,w){
+  state.cols.widths[key]=w;
+  const idx=visibleColIndex(key); if(idx<0) return;
+  const th=theadRow.children[idx]; th.style.minWidth=w+"px"; th.style.width=w+"px";
+}
+function visibleCols(){ return COLS.filter(c=>state.cols.visible[c.key]!==false); }
+function visibleColIndex(key){ return visibleCols().findIndex(c=>c.key===key); }
+
+/* offsets de columnas congeladas */
+function layoutFrozen(){
+  // limpiar estilos
+  [...theadRow.children].forEach(th=>{ th.style.left=null; th.style.zIndex=12; });
+  [...tbody.querySelectorAll("td")].forEach(td=>{ td.style.left=null; td.style.position=null; td.style.zIndex=null; });
+
+  const frozenKeys = visibleCols().map(c=>c.key).filter(k=>state.cols.frozen[k]);
+  let left=0;
+  visibleCols().forEach((c,idx)=>{
+    const th=theadRow.children[idx];
+    const width=th.getBoundingClientRect().width;
+    if(frozenKeys.includes(c.key)){
+      th.style.left=left+"px"; th.style.zIndex=14;
+      // celdas
+      const tds=[...tbody.querySelectorAll(`tr td:nth-child(${idx+1})`)];
+      tds.forEach(td=>{ td.style.position="sticky"; td.style.left=left+"px"; td.style.zIndex=13; backgroundFix(td); });
+      left+=width;
+    }
+  });
+}
+function backgroundFix(td){ td.style.background="#fff"; } // evita trasparencia bajo sticky
+
+function render(){
+  // filtros
+  const q=document.getElementById("search").value;
+  const fS=document.getElementById("filtroSemaforo").value;
+  const fA=document.getElementById("filtroAsistencia").value;
+  const fM=document.getElementById("filtroMigracion").value;
+
+  // cabecera
+  buildHead();
+
+  // cuerpo
+  tbody.innerHTML="";
+  let count=0, kpi={g:0,y:0,r:0,a:0,m:0};
+  for(const r of rows()){
+    const [no,nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave]=r;
+    const st=state.checks[no]||{pasaporte:"",asistencia:false,migracion:false,notas:""};
+    const obj={nombre,ap,am,clave,vid,rid,vr,rr};
+
+    const color=semColor(st.asistencia,st.migracion);
+    if(fS && !({verde:"green",amarillo:"yellow",rojo:"red"}[fS]===color)) continue;
+    if(fA && ((fA==="Sí")!==!!st.asistencia)) continue;
+    if(fM && ((fM==="Sí")!==!!st.migracion)) continue;
+    if(!matchesQuery(obj,q)) continue;
+
+    const tr=document.createElement("tr");
+    visibleCols().forEach(c=>{
+      const td=document.createElement("td");
+      td.dataset.key=c.key;
+      if(c.key==="no") td.textContent=no;
+      else if(c.key==="nombre") td.textContent=nombre;
+      else if(c.key==="ap") td.textContent=ap;
+      else if(c.key==="am") td.textContent=am;
+      else if(c.key==="fn") td.textContent=fn||"";
+      else if(c.key==="fs") td.textContent=fs;
+      else if(c.key==="vid") td.textContent=vid;
+      else if(c.key==="rid") td.textContent=rid;
+      else if(c.key==="hid") td.textContent=hid;
+      else if(c.key==="fr") td.textContent=fr;
+      else if(c.key==="vr") td.textContent=vr;
+      else if(c.key==="rr") td.textContent=rr;
+      else if(c.key==="hr") td.textContent=hr;
+      else if(c.key==="clave") td.textContent=clave;
+      else if(c.key==="pasaporte"){
+        td.innerHTML=`<input class="editable" data-k="pasaporte" data-id="${no}" type="text" value="${st.pasaporte||""}" placeholder="N° pasaporte">`;
+      }else if(c.key==="asistencia"){
+        td.className="center"; td.innerHTML=`<input type="checkbox" data-k="asistencia" data-id="${no}" ${st.asistencia?"checked":""}>`;
+      }else if(c.key==="migracion"){
+        td.className="center"; td.innerHTML=`<input type="checkbox" data-k="migracion" data-id="${no}" ${st.migracion?"checked":""}>`;
+      }else if(c.key==="semaforo"){
+        const map={green:["VERDE","green"],yellow:["AMARILLO","yellow"],red:["ROJO","red"]};
+        const [t,cls]=map[color];
+        td.innerHTML=`<span class="pill ${cls}">${t}</span>`;
+      }else if(c.key==="notas"){
+        td.innerHTML=`<input class="editable" data-k="notas" data-id="${no}" type="text" value="${st.notas||""}" placeholder="Notas">`;
+      }else if(c.key==="acciones"){
+        td.innerHTML=`<button class="btn-ghost" data-act="edit" data-id="${no}">Editar</button>
+                      <button class="btn-danger" data-act="del" data-id="${no}">Eliminar</button>`;
+      }
+      tr.appendChild(td);
+    });
+    tr.addEventListener("mouseenter",()=>{ activeRow(no,nombre,ap,am,clave); });
+    tbody.appendChild(tr); count++;
+
+    // kpis
+    if(st.asistencia) kpi.a++;
+    if(st.migracion) kpi.m++;
+    if(color==="green") kpi.g++; else if(color==="yellow") kpi.y++; else kpi.r++;
+  }
+  document.getElementById("count").textContent=`${count} pasajer@/s mostrados`;
+  layoutFrozen();
+  renderKPIs(kpi);
+}
+
+function renderKPIs(k){ document.getElementById("kpis").innerHTML=
+  `<span class="small">Verde: <strong>${k.g}</strong></span>
+   <span class="small">Amarillo: <strong>${k.y}</strong></span>
+   <span class="small">Rojo: <strong>${k.r}</strong></span>
+   <span class="small">Asistencia: <strong>${k.a}</strong></span>
+   <span class="small">Migración: <strong>${k.m}</strong></span>`;
+}
+
+function activeRow(no,nombre,ap,am,clave){
+  barName.textContent=`${no} · ${nombre} ${ap} ${am||""}`.trim();
+  barClave.textContent=clave?`· ${clave}`:"";
+  activebar.classList.add("show");
+}
+
+/* ===================== Eventos básicos ===================== */
+document.addEventListener("input",(e)=>{
+  const t=e.target;
+  if(t.matches(".editable,[type=checkbox]")){
+    const id=Number(t.dataset.id), k=t.dataset.k;
+    state.checks[id]=state.checks[id]||{pasaporte:"",asistencia:false,migracion:false,notas:""};
+    state.checks[id][k]=(t.type==="checkbox")?t.checked:t.value;
+    save(); if(t.type==="checkbox") render();
+  }
+  if(t.id==="search") render();
+});
+["filtroSemaforo","filtroAsistencia","filtroMigracion"].forEach(id=>document.getElementById(id).addEventListener("change",render));
+
+/* Export CSV */
+document.getElementById("btnExport").addEventListener("click",()=>{
+  const headers=visibleCols().map(c=>c.label);
+  const lines=[headers.join(",")];
+  for(const r of rows()){
+    const [no,nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave]=r;
+    const st=state.checks[no]||{};
+    const color=semColor(!!st.asistencia,!!st.migracion);
+    const vals=[];
+    visibleCols().forEach(c=>{
+      let v="";
+      if(c.key==="no") v=no;
+      else if(c.key==="nombre") v=nombre;
+      else if(c.key==="ap") v=ap;
+      else if(c.key==="am") v=am;
+      else if(c.key==="fn") v=fn||"";
+      else if(c.key==="fs") v=fs;
+      else if(c.key==="vid") v=vid;
+      else if(c.key==="rid") v=rid;
+      else if(c.key==="hid") v=hid;
+      else if(c.key==="fr") v=fr;
+      else if(c.key==="vr") v=vr;
+      else if(c.key==="rr") v=rr;
+      else if(c.key==="hr") v=hr;
+      else if(c.key==="clave") v=clave;
+      else if(c.key==="pasaporte") v=st.pasaporte||"";
+      else if(c.key==="asistencia") v=st.asistencia?"Sí":"No";
+      else if(c.key==="migracion") v=st.migracion?"Sí":"No";
+      else if(c.key==="semaforo") v=(color==="green"?"Verde":color==="yellow"?"Amarillo":"Rojo");
+      else if(c.key==="notas") v=st.notas||"";
+      else v="";
+      vals.push(`"${String(v).replaceAll('"','""')}"`);
+    });
+    lines.push(vals.join(","));
+  }
+  const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="Control_Aeropuerto_v6.csv"; a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* Sticky exacto: padding del contenedor */
+function updateSticky(){
+  const header=document.querySelector("header");
+  const note=document.getElementById("note");
+  const pad=(header?.offsetHeight||0)+(note?.offsetHeight||0)+4; // margen pequeño
+  document.documentElement.style.setProperty("--stickyPad", pad+"px");
+}
+window.addEventListener("resize",()=>{updateSticky();layoutFrozen();});
+window.addEventListener("load",()=>{ 
+  document.getElementById("density").value=state.density;
+  setDensity(state.density);
+  updateSticky(); buildHead(); render();
+});
+
+/* ===================== Alta/Edición/Eliminación ===================== */
+const modal=document.getElementById("modal");
+function fillForm(v={}){ fNombre.value=v.nombre||""; fAp.value=v.ap||""; fAm.value=v.am||""; fFn.value=v.fn||"";
+  fFs.value=v.fs||BASE_FLIGHT.fs; fVid.value=v.vid||BASE_FLIGHT.vid; fRid.value=v.rid||BASE_FLIGHT.rid; fHid.value=v.hid||BASE_FLIGHT.hid;
+  fFr.value=v.fr||BASE_FLIGHT.fr; fVr.value=v.vr||BASE_FLIGHT.vr; fRr.value=v.rr||BASE_FLIGHT.rr; fHr.value=v.hr||BASE_FLIGHT.hr;
+  fClave.value=v.clave||""; fPasaporte.value=v.pasaporte||""; fAsistencia.value=v.asistencia?"Sí":"No"; fMigracion.value=v.migracion?"Sí":"No"; fNotas.value=v.notas||"";
+}
+let formMode="add", editingId=null;
+btnAdd.addEventListener("click",()=>{formMode="add";editingId=null;formTitle.textContent="Nuevo pasajero";fillForm({});modal.classList.add("open");});
+fCancel.addEventListener("click",()=>modal.classList.remove("open"));
+document.addEventListener("click",(e)=>{
+  const b=e.target.closest("button");
+  if(!b) return;
+  const id=Number(b.dataset.id);
+  if(b.dataset.act==="del"){
+    if(confirm("¿Eliminar este pasajero de la lista?")){
+      const idx=state.extras.findIndex(r=>r[0]===id);
+      if(idx>=0) state.extras.splice(idx,1); else state.deleted[id]=true;
+      save(); render();
+    }
+  }
+  if(b.dataset.act==="edit"){
+    const r=rows().find(x=>x[0]===id), st=state.checks[id]||{};
+    const [no,nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave]=r;
+    formMode="edit"; editingId=id; formTitle.textContent="Editar pasajero";
+    fillForm({nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave,pasaporte:st.pasaporte,asistencia:st.asistencia,migracion:st.migracion,notas:st.notas});
+    modal.classList.add("open");
+  }
+});
+fSave.addEventListener("click",()=>{
+  const nombre=fNombre.value.trim(), ap=fAp.value.trim();
+  if(!nombre||!ap){alert("Nombre y Apellido paterno son obligatorios.");return;}
+  const am=fAm.value.trim(), fn=fFn.value, fs=fFs.value.trim(), vid=fVid.value.trim(), rid=fRid.value.trim(), hid=fHid.value.trim(),
+        fr=fFr.value.trim(), vr=fVr.value.trim(), rr=fRr.value.trim(), hr=fHr.value.trim(), clave=fClave.value.trim()||"—",
+        pas=fPasaporte.value.trim(), asis=fAsistencia.value==="Sí", migr=fMigracion.value==="Sí", notas=fNotas.value.trim();
+  if(formMode==="add"){
+    const maxNo=Math.max(...rows().map(r=>r[0]),0); const no=maxNo+1;
+    const row=[no,nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave];
+    state.extras.push(row); state.checks[no]={pasaporte:pas,asistencia:asis,migracion:migr,notas};
+  }else{
+    const no=editingId;
+    state.overrides[no]=[no,nombre,ap,am,fn,fs,vid,rid,hid,fr,vr,rr,hr,clave];
+    state.checks[no]={pasaporte:pas,asistencia:asis,migracion:migr,notas};
+  }
+  save(); modal.classList.remove("open"); render();
+});
+
+/* ===================== Panel Columnas (freeze/visible) ===================== */
+const modalCols=document.getElementById("modalCols");
+document.getElementById("btnCols").addEventListener("click",()=>{ openCols(); });
+document.getElementById("colsCancel").addEventListener("click",()=>modalCols.classList.remove("open"));
+document.getElementById("colsApply").addEventListener("click",()=>{
+  // actualizar desde checkboxes
+  document.querySelectorAll("[data-freeze]").forEach(ch=>{ state.cols.frozen[ch.dataset.key]=ch.checked; });
+  document.querySelectorAll("[data-visible]").forEach(ch=>{ state.cols.visible[ch.dataset.key]=ch.checked; });
+  save(); modalCols.classList.remove("open"); render();
+});
+function openCols(){
+  const freezeList=document.getElementById("freezeList");
+  const visibleList=document.getElementById("visibleList");
+  freezeList.innerHTML=""; visibleList.innerHTML="";
+  COLS.forEach(c=>{
+    // Freeze
+    const f=document.createElement("label"); f.className="small";
+    const ch=document.createElement("input"); ch.type="checkbox"; ch.dataset.freeze=true; ch.dataset.key=c.key;
+    ch.checked=!!state.cols.frozen[c.key]; ch.disabled=c.key==="acciones";
+    f.appendChild(ch); f.append(" "+c.label);
+    freezeList.appendChild(f);
+    // Visible
+    const v=document.createElement("label"); v.className="small";
+    const ch2=document.createElement("input"); ch2.type="checkbox"; ch2.dataset.visible=true; ch2.dataset.key=c.key;
+    ch2.checked=state.cols.visible[c.key]!==false; if(c.fixed) ch2.disabled=true; // # siempre visible
+    v.appendChild(ch2); v.append(" "+c.label);
+    visibleList.appendChild(v);
+  });
+  modalCols.classList.add("open");
+}
+
+/* ===================== Densidad (presets) ===================== */
+document.getElementById("density").addEventListener("change",(e)=>{ setDensity(e.target.value); save(); });
+function setDensity(v){
+  state.density=v;
+  document.body.classList.remove("comodo","compacto","ultra");
+  document.body.classList.add(v);
+  layoutFrozen();
+}
+
+/* ===================== Importar Excel/CSV ===================== */
+const modalImport=document.getElementById("modalImport");
+document.getElementById("btnImport").addEventListener("click",()=>{ openImport(); });
+function openImport(){ document.getElementById("fileInput").value=""; document.getElementById("importStage").style.display="none"; modalImport.classList.add("open"); }
+document.getElementById("impCancel").addEventListener("click",()=>modalImport.classList.remove("open"));
+
+let importData=[], importHeaders=[];
+document.getElementById("fileInput").addEventListener("change",async(e)=>{
+  const file=e.target.files[0]; if(!file) return;
+  const ext=file.name.split(".").pop().toLowerCase();
+  if(ext==="csv"){
+    const text=await file.text(); const rows=text.split(/\r?\n/).filter(x=>x.trim()!=="").map(r=>parseCSV(r));
+    importHeaders=rows.shift(); importData=rows.map(r=>arrayToObj(importHeaders,r));
+    buildMappingUI();
+  }else if(ext==="xlsx"){
+    if(window.XLSX){
+      const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:"array"}); const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      importHeaders=json.shift(); importData=json.filter(r=>r.length>0).map(r=>arrayToObj(importHeaders,r));
+      buildMappingUI();
+    }else{
+      alert("Por ahora esta versión no incluye lector de .xlsx embebido. Exporta tu Excel como CSV e impórtalo. Si quieres, en la siguiente versión lo integro con SheetJS.");
+    }
+  }else{
+    alert("Sube un archivo .csv o .xlsx");
+  }
+});
+function parseCSV(line){
+  const out=[]; let cur="",q=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"' ){ if(line[i+1]==='"'){ cur+='"'; i++; } else q=!q; }
+    else if(c===',' && !q){ out.push(cur); cur=""; }
+    else cur+=c;
+  }
+  out.push(cur); return out;
+}
+function arrayToObj(headers,row){ const o={}; headers.forEach((h,i)=>o[String(h).trim()]=row[i]??""); return o; }
+
+const SYS_FIELDS=[
+  ["no","# (opcional)"],["nombre","NOMBRE"],["ap","APELLIDO PATERNO"],["am","APELLIDO MATERNO"],
+  ["fn","FECHA NAC."],["fs","FECHA SALIDA"],["vid","VUELO IDA"],["rid","RUTA IDA"],["hid","HORA IDA"],
+  ["fr","FECHA REGRESO"],["vr","VUELO REGRESO"],["rr","RUTA REGRESO"],["hr","HORA REGRESO"],
+  ["clave","CLAVE"],["pasaporte","PASAPORTE"],["asistencia","ASISTENCIA (Sí/No)"],["migracion","MIGRACIÓN (Sí/No)"],["notas","NOTAS"]
+];
+let mapping={}; // {sysField: headerName}
+function buildMappingUI(){
+  const mapList=document.getElementById("mapList"); mapList.innerHTML="";
+  // autocompletar por similitud básica
+  SYS_FIELDS.forEach(([k,label])=>{
+    const wrap=document.createElement("div");
+    const sel=document.createElement("select"); sel.dataset.key=k;
+    const opt0=document.createElement("option"); opt0.value=""; opt0.textContent="— Sin dato —"; sel.appendChild(opt0);
+    importHeaders.forEach(h=>{ const o=document.createElement("option"); o.value=h; o.textContent=h; sel.appendChild(o); });
+    // sugerencia
+    const sug=importHeaders.find(h=>normalize(h).includes(normalize(label).split(" ")[0]));
+    if(sug) sel.value=sug;
+    const l=document.createElement("label"); l.className="small"; l.textContent=label;
+    wrap.appendChild(l); wrap.appendChild(sel); mapList.appendChild(wrap);
+  });
+
+  // preview
+  const prev=document.getElementById("preview"); prev.innerHTML="";
+  const first=importData.slice(0,10);
+  prev.innerHTML = `<div class="small">Columnas detectadas: ${importHeaders.join(", ")}</div>
+                    <div class="small">Filas: ${importData.length}</div>
+                    <pre class="small" style="max-height:160px;overflow:auto;background:#fafafa;border:1px solid var(--line);padding:6px">${JSON.stringify(first,null,2)}</pre>`;
+  document.getElementById("importStage").style.display="block";
+}
+document.getElementById("impApply").addEventListener("click",()=>{
+  // leer mapping
+  mapping={}; document.querySelectorAll("#mapList select").forEach(sel=>{ if(sel.value) mapping[sel.dataset.key]=sel.value; });
+  const tplName=document.getElementById("tplName").value.trim(); if(tplName) state.tpls[tplName]=mapping;
+
+  // transformar
+  const transformed=importData.map((row,i)=>{
+    const get=(k)=>row[mapping[k]]??"";
+    const bool=(v)=>/^si|sí|1|true$/i.test(String(v).trim());
+    const no = get("no")? Number(get("no")) : undefined;
+    return {
+      no, nombre:get("nombre"), ap:get("ap"), am:get("am"), fn:get("fn"),
+      fs:get("fs")||BASE_FLIGHT.fs, vid:get("vid")||BASE_FLIGHT.vid, rid:get("rid")||BASE_FLIGHT.rid, hid:get("hid")||BASE_FLIGHT.hid,
+      fr:get("fr")||BASE_FLIGHT.fr, vr:get("vr")||BASE_FLIGHT.vr, rr:get("rr")||BASE_FLIGHT.rr, hr:get("hr")||BASE_FLIGHT.hr,
+      clave:get("clave")||"",
+      pasaporte:get("pasaporte")||"", asistencia:bool(get("asistencia")), migracion:bool(get("migracion")), notas:get("notas")||""
+    };
+  });
+
+  // insertar
+  let maxNo=Math.max(...rows().map(r=>r[0]),0);
+  transformed.forEach(t=>{
+    const no = t.no || (++maxNo);
+    const row=[no,t.nombre,t.ap,t.am,t.fn,t.fs,t.vid,t.rid,t.hid,t.fr,t.vr,t.rr,t.hr,t.clave];
+    state.extras.push(row);
+    state.checks[no]={pasaporte:t.pasaporte,asistencia:t.asistencia,migracion:t.migracion,notas:t.notas};
+  });
+  save(); modalImport.classList.remove("open"); render();
+});
+
+/* ===================== Miscelánea ===================== */
+document.getElementById("search").addEventListener("focus",()=>activebar.classList.remove("show"));
+
+/* Inicializar visibilidad por defecto (si no existe) */
+(function initCols(){
+  if(!state.cols.visible || Object.keys(state.cols.visible).length===0){
+    state.cols.visible={}; COLS.forEach(c=>state.cols.visible[c.key]=true);
+  }
+  save();
+})();
+
+</script>
+</body>
+</html>
