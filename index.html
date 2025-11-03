@@ -1,19 +1,17 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Control Aeropuerto – Sura</title>
 <style>
-  :root{
-    --bg:#ffffff; --muted:#f5f7fb; --text:#111; --sub:#6b7280; --line:#e5e7eb;
-    --primary:#2563eb; --primary-600:#1d4ed8; --radius:14px;
-    --fs:14px; --row-h:48px;
-  }
+  :root{ --bg:#ffffff; --muted:#f5f7fb; --text:#111; --sub:#6b7280; --line:#e5e7eb;
+         --primary:#2563eb; --primary-600:#1d4ed8; --fs:14px; --row-h:48px; }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;font-size:var(--fs)}
   .container{max-width:1200px;margin:0 auto;padding:16px 16px 80px;}
 
+  /* Topbar */
   .topbar{position:sticky; top:0; z-index:30; background:var(--bg); padding:12px 0 10px; border-bottom:1px solid var(--line)}
   .topline{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   h1{font-size:22px;margin:0 12px 0 0;}
@@ -21,16 +19,17 @@
   .toolbar{margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .search{flex:1 1 260px;min-width:220px}
 
-  input[type="text"], input[type="date"], textarea, select{
-    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:14px;outline:none
-  }
+  /* Controles */
+  input[type="text"], input[type="date"], textarea, select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:14px;outline:none}
   .btn{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:600}
   .btn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
   .btn.primary:hover{background:var(--primary-600)}
   .btn.danger{background:#fee2e2;color:#991b1b;border-color:#fecaca}
   .btn.icon{display:inline-flex;gap:8px;align-items:center}
+  .btn.small{padding:6px 10px;border-radius:10px;font-weight:600}
   .hidden{display:none}
 
+  /* Tabla */
   .table-wrap{margin-top:10px;overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:70vh;background:#fff}
   table{width:100%;border-collapse:separate;border-spacing:0;min-width:1000px}
   thead th{position:sticky; top:0; z-index:10; background:#e3f2ff; color:#0f172a; text-align:left; font-weight:700; padding:10px; border-bottom:1px solid var(--line)}
@@ -39,10 +38,12 @@
   .zebra tbody tr:nth-child(odd){background:#fafcff}
   .wrap tbody td{white-space:normal}
   .hidden-row{display:none !important}
-
   .col-idx{width:48px;text-align:right;color:var(--sub)}
+
+  /* Acciones: que no se corte Eliminar */
+  td.row-actions-cell{ white-space:normal !important; overflow:visible !important; }
   .row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .btn.small{padding:6px 10px;border-radius:10px;font-weight:600}
+
   .note-input{min-width:160px}
   .passport{min-width:130px}
   .check{width:18px;height:18px}
@@ -52,6 +53,7 @@
   .pill.yellow{color:#92400e;border-color:#fef3c7;background:#fffbeb}
   .pill.red{color:#991b1b;border-color:#fee2e2;background:#fef2f2}
 
+  /* Modales */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:50}
   .modal{width:min(680px,95vw);background:#fff;border-radius:16px;padding:18px;border:1px solid var(--line)}
   .modal h2{margin:0 0 12px 0}
@@ -60,7 +62,7 @@
   @media (max-width:640px){ .grid.cols-2{grid-template-columns:1fr} }
   .modal .footer{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
 
-  /* Columnas fijas */
+  /* Fijado de columnas */
   .sticky-left{position:sticky; left:0; z-index:15; background:#fff; box-shadow:1px 0 0 0 var(--line)}
   thead .sticky-left{background:#e3f2ff; z-index:20}
 
@@ -181,10 +183,7 @@
 
 <script>
 (() => {
-  // === Keys
   const KEY='controlAeropuerto.v1', FREEZE_KEY='controlAeropuerto.freezeCols', VIEW_KEY='controlAeropuerto.view', FREEZE_W_KEY='controlAeropuerto.freezeWidths';
-
-  // === Utils
   const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
   const norm=s=>(s??'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.,]/g,' ').toLowerCase().trim();
   const esc=s=>(s??'').toString().replace(/[<>&]/g,m=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
@@ -194,44 +193,64 @@
   const load=k=>{ try{return JSON.parse(localStorage.getItem(k)||'null');}catch{return null;} };
   const debounce=(fn,ms)=>{let t; return (...a)=>{clearTimeout(t); t=setTimeout(()=>fn(...a),ms);}};
 
-  // === Datos
+  /* -------- Buscador robusto -------- */
+  const mkHaystack = (r) => norm([
+    r.nombre,r.ncto,r.origen,r.fecha,r.vuelo,r.orig_dstn,r.sale_llega,r.clave,
+    r.pasaporte,r.notas, r.asistencia?'asistencia':'', r.migracion?'migracion':'', r.semaforo
+  ].join(' '));
+  const terms = (q) => norm(q).split(/\s+/).filter(Boolean);
+
+  /* -------- Datos -------- */
   let data=load(KEY)||[];
   if(!data||!data.length){
-    data=[{"nombre":"Griselda Elizabeth Garcia Garza","ncto":"1989-11-06","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"HKHGVG/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Luis Gerardo Cisneros Gonzalez","ncto":"1977-03-17","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"HKHGVG/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Margarita Velez Escamilla","ncto":"1975-10-16","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"HKHGVG/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Tania Lizeth Aleman Castillo","ncto":"1991-10-05","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"HKHGVG/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Norma Amelia Gonzalez Garza","ncto":"1972-05-03","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Elsa Yolanda Guerrero Hernandez","ncto":"1975-06-25","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Nubia Anahi Cantu Ibarra","ncto":"1994-08-12","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Luis Manuel Rodriguez Cervantes","ncto":"1995-01-24","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Yurie Hernandez Soberon","ncto":"1983-11-21","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""},{"nombre":"Alicia Nayeli Avila","ncto":"1999-07-16","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55-11:55","clave":"SPLHZP/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""}];
+    data=[{"nombre":"Griselda Elizabeth Garcia Garza","ncto":"1989-11-06","origen":"MTY","fecha":"2025-11-03","vuelo":"AM 0668","orig_dstn":"MEX-SFO","sale_llega":"08:55–11:55","clave":"HKHGVG/NFIY6Q","pasaporte":"","asistencia":false,"migracion":false,"semaforo":"VERDE","notas":""}];
     save(KEY,data);
   }
 
-  // === Columnas meta (para “fijar”)
-  const COLS=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]; // índices
-
-  // === Render inicial (crea filas una vez)
   const tbody=$('#tbody');
-  function buildOnce(){
-    tbody.innerHTML = data.map((r,i)=>`
-      <tr data-idx="${i}">
-        <td class="col-idx">${i+1}</td>
-        <td>${esc(r.nombre)}</td>
-        <td>${esc(r.ncto)}</td>
-        <td>${esc(r.origen)}</td>
-        <td>${esc(r.fecha)}</td>
-        <td>${esc(r.vuelo)}</td>
-        <td>${esc(r.orig_dstn)}</td>
-        <td>${esc(r.sale_llega)}</td>
-        <td>${esc(r.clave)}</td>
-        <td><input class="passport" type="text" value="${escAttr(r.pasaporte||'')}" data-field="pasaporte"></td>
-        <td><input class="check" type="checkbox" ${r.asistencia?'checked':''} data-field="asistencia"></td>
-        <td><input class="check" type="checkbox" ${r.migracion?'checked':''} data-field="migracion"></td>
-        <td>
-          <select data-field="semaforo">
-            ${['VERDE','AMARILLO','ROJO'].map(o=>`<option ${o===(r.semaforo||'VERDE')?'selected':''}>${o}</option>`).join('')}
-          </select>
-          <span class="pill ${pillClass(r.semaforo)}">${r.semaforo||'VERDE'}</span>
-        </td>
-        <td><input class="note-input" type="text" value="${escAttr(r.notas||'')}" data-field="notas"></td>
-        <td class="row-actions"><button class="btn small" data-act="edit">Editar</button><button class="btn small danger" data-act="del">Eliminar</button></td>
-      </tr>`).join('');
+  function pillClass(v){ v=(v||'VERDE').toUpperCase(); return v==='ROJO'?'red':(v==='AMARILLO'?'yellow':'green'); }
 
-    // eventos inline (una vez)
+  function rowHTML(r,i){
+    return `<tr data-idx="${i}">
+      <td class="col-idx">${i+1}</td>
+      <td>${esc(r.nombre)}</td>
+      <td>${esc(r.ncto)}</td>
+      <td>${esc(r.origen)}</td>
+      <td>${esc(r.fecha)}</td>
+      <td>${esc(r.vuelo)}</td>
+      <td>${esc(r.orig_dstn)}</td>
+      <td>${esc(r.sale_llega)}</td>
+      <td>${esc(r.clave)}</td>
+      <td><input class="passport" type="text" value="${escAttr(r.pasaporte||'')}" data-field="pasaporte"></td>
+      <td><input class="check" type="checkbox" ${r.asistencia?'checked':''} data-field="asistencia"></td>
+      <td><input class="check" type="checkbox" ${r.migracion?'checked':''} data-field="migracion"></td>
+      <td>
+        <select data-field="semaforo">
+          ${['VERDE','AMARILLO','ROJO'].map(o=>`<option ${o===(r.semaforo||'VERDE')?'selected':''}>${o}</option>`).join('')}
+        </select>
+        <span class="pill ${pillClass(r.semaforo)}">${r.semaforo||'VERDE'}</span>
+      </td>
+      <td><input class="note-input" type="text" value="${escAttr(r.notas||'')}" data-field="notas"></td>
+      <td class="row-actions-cell">
+        <div class="row-actions">
+          <button class="btn small" data-act="edit">Editar</button>
+          <button class="btn small danger" data-act="del">Eliminar</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  function buildOnce(){
+    tbody.innerHTML = data.map((r,i)=>rowHTML(r,i)).join('');
+    // guardar haystack por fila
+    $$('#tbody tr').forEach(tr=>{
+      const i = Number(tr.dataset.idx);
+      tr.dataset.q = mkHaystack(data[i]);
+    });
+    bindRowEvents();
+    $('#chip-count').textContent = `${visibleCount()} pasajer@/s`;
+  }
+  function bindRowEvents(){
     $$('#tbody input[data-field], #tbody select[data-field]').forEach(el=>{
       el.addEventListener('input', onInlineEdit);
       el.addEventListener('change', onInlineEdit);
@@ -239,39 +258,39 @@
     $$('#tbody [data-act="edit"]').forEach(b=>b.addEventListener('click', onEdit));
     $$('#tbody [data-act="del"]').forEach(b=>b.addEventListener('click', onDel));
   }
+  function visibleCount(){ return $$('#tbody tr:not(.hidden-row)').length; }
 
-  function pillClass(v){ v=(v||'VERDE').toUpperCase(); return v==='ROJO'?'red':(v==='AMARILLO'?'yellow':'green'); }
-
-  // === Filtro sin destruir filas
   function applyFilter(){
-    const q=norm($('#q').value), fSem=$('#f-semaforo').value, fAs=$('#f-asist').value, fMi=$('#f-migr').value;
+    const qs = terms($('#q').value);
+    const fSem=$('#f-semaforo').value, fAs=$('#f-asist').value, fMi=$('#f-migr').value;
     let visibles=0;
     $$('#tbody tr').forEach(tr=>{
-      const i=Number(tr.dataset.idx), r=data[i];
+      const r = data[Number(tr.dataset.idx)];
       const passSem = !fSem || (r.semaforo||'').toUpperCase()===fSem;
       const passAs  = fAs==='' || String(!!r.asistencia)===fAs;
       const passMi  = fMi==='' || String(!!r.migracion)===fMi;
-      const hay = norm([r.nombre,r.ncto,r.origen,r.fecha,r.vuelo,r.orig_dstn,r.sale_llega,r.clave,r.pasaporte,r.notas].join(' '));
-      const passQ = !q || hay.includes(q);
+      const hay = tr.dataset.q || '';
+      const passQ = !qs.length || qs.every(t=>hay.includes(t));
       const ok = passSem && passAs && passMi && passQ;
       tr.classList.toggle('hidden-row', !ok);
       if(ok) visibles++;
     });
     $('#chip-count').textContent = `${visibles} pasajer@/s`;
-    // re-aplica offsets sin soltar fijado
     stableFreeze();
   }
 
-  // === Inline edit
   function onInlineEdit(e){
     const tr=e.target.closest('tr'); const idx=Number(tr.dataset.idx); const f=e.target.dataset.field;
     if (f==='asistencia'||f==='migracion'){ data[idx][f]=e.target.checked; }
-    else if (f==='semaforo'){ data[idx][f]=e.target.value; tr.querySelector('.pill').textContent=e.target.value; tr.querySelector('.pill').className='pill '+pillClass(e.target.value); }
-    else { data[idx][f]=e.target.value; }
+    else if (f==='semaforo'){ data[idx][f]=e.target.value;
+      tr.querySelector('.pill').textContent=e.target.value;
+      tr.querySelector('.pill').className='pill '+pillClass(e.target.value);
+    } else { data[idx][f]=e.target.value; }
+    // refrescar haystack de esa fila
+    tr.dataset.q = mkHaystack(data[idx]);
     save(KEY,data);
   }
 
-  // === CRUD
   let editingIndex=null;
   function openModal(val={}){
     $('#modal-title').textContent=(editingIndex===null)?'Agregar pasajero':'Editar pasajero';
@@ -285,7 +304,9 @@
   function onEdit(e){ const idx=Number(e.target.closest('tr').dataset.idx); editingIndex=idx; openModal(data[idx]); }
   function onDel(e){
     const idx=Number(e.target.closest('tr').dataset.idx);
-    if(confirm('¿Eliminar pasajero?')){ data.splice(idx,1); save(KEY,data); buildOnce(); applyFilter(); }
+    if(!confirm('¿Eliminar pasajero?')) return;
+    data.splice(idx,1); save(KEY,data);
+    buildOnce(); applyFilter(); stableFreeze(true);
   }
   $('#m-cancel').addEventListener('click', closeModal);
   $('#m-save').addEventListener('click', ()=>{
@@ -297,15 +318,20 @@
     };
     if(!rec.nombre){ alert('El nombre es obligatorio'); return; }
     if(editingIndex===null) data.push(rec); else data[editingIndex]=rec;
-    save(KEY,data); buildOnce(); applyFilter(); closeModal();
+    save(KEY,data); buildOnce(); applyFilter(); closeModal(); stableFreeze(true);
   });
   $('#modal-bd').addEventListener('click', e=>{ if(e.target.id==='modal-bd') closeModal(); });
 
-  // === CSV
+  // CSV
   $('#btn-import').addEventListener('click', ()=>$('#csv-file').click());
   $('#csv-file').addEventListener('change', async e=>{
-    const f=e.target.files[0]; if(!f) return; const t=await f.text(); const rows=parseCSV(t); if(!rows.length){ alert('CSV vacío'); return; }
-    data=data.concat(mapCSV(rows)); save(KEY,data); buildOnce(); applyFilter(); e.target.value='';
+    const f=e.target.files[0]; if(!f) return;
+    const replace = confirm('¿Reemplazar TODOS los pasajeros con este archivo?\nAceptar = Reemplazar · Cancelar = Agregar');
+    const t=await f.text(); const rows=parseCSV(t); if(!rows.length){ alert('CSV vacío'); e.target.value=''; return; }
+    const incoming = mapCSV(rows);
+    data = replace ? incoming : data.concat(incoming);
+    save(KEY,data); buildOnce(); applyFilter(); stableFreeze(true);
+    e.target.value='';
   });
   $('#btn-export').addEventListener('click', ()=>{
     const headers=['primer_nombre','fecha_ncto','origen','fecha','vuelo','orig_dstn','sale_llega','clave','pasaporte','asistencia','migracion','semaforo','notas'];
@@ -315,14 +341,7 @@
   $('#btn-print').addEventListener('click', ()=>window.print());
   $('#btn-add').addEventListener('click', ()=>{ editingIndex=null; openModal({semaforo:'VERDE'}); });
 
-  // === Filtros con debounce
-  const debFilter=debounce(applyFilter,150);
-  $('#q').addEventListener('input', debFilter);
-  $('#f-semaforo').addEventListener('change', applyFilter);
-  $('#f-asist').addEventListener('change', applyFilter);
-  $('#f-migr').addEventListener('change', applyFilter);
-
-  // === CSV helpers
+  // CSV helpers
   function parseCSV(text){
     const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length), rows=[];
     for(const line of lines){
@@ -360,7 +379,8 @@
     return out;
   }
 
-  // === Fijar columnas (estable y sin parpadeo)
+  // Fijar columnas
+  const COLS=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14];
   const freezeBd=$('#freeze-bd'), freezeList=$('#freeze-list');
   $('#btn-freeze').addEventListener('click', ()=>{
     const sel=new Set(load(FREEZE_KEY)||[]);
@@ -371,7 +391,6 @@
   $('#freeze-apply').addEventListener('click', ()=>{
     const checked=Array.from(freezeList.querySelectorAll('input:checked')).map(el=>Number(el.value)).sort((a,b)=>a-b);
     save(FREEZE_KEY,checked);
-    // congela anchos una sola vez y los recuerda
     const widths = COLS.map(i=> $('#tabla thead th:nth-child('+(i+1)+')').getBoundingClientRect().width );
     save(FREEZE_W_KEY,widths);
     freezeBd.style.display='none';
@@ -382,8 +401,6 @@
     const sel=(load(FREEZE_KEY)||[]).sort((a,b)=>a-b);
     const tw=$('#tableWrap'); const prevScroll=tw.scrollLeft;
     const widths = load(FREEZE_W_KEY) || COLS.map(i=> $('#tabla thead th:nth-child('+(i+1)+')').getBoundingClientRect().width );
-
-    // fija anchos (evita que cambien por la barra de scroll)
     if(force || !load(FREEZE_W_KEY)){
       COLS.forEach((i)=>{
         const th=$('#tabla thead th:nth-child('+(i+1)+')');
@@ -395,8 +412,6 @@
       });
       save(FREEZE_W_KEY,widths);
     }
-
-    // aplica offsets en doble frame para evitar parpadeo
     $$('#tabla th, #tabla td').forEach(c=>{ c.classList.remove('sticky-left'); c.style.left=null; });
     requestAnimationFrame(()=>{ requestAnimationFrame(()=>{
       let acc=0;
@@ -414,7 +429,7 @@
     }); });
   }
 
-  // === Vista
+  // Vista (densidad / zebra / wrap)
   const pop=$('#view-pop'); let popOpen=false;
   $('#btn-view').addEventListener('click', (e)=>{
     const r=e.target.getBoundingClientRect(); pop.style.left=r.left+'px'; pop.style.top=(r.bottom+8)+'px';
@@ -441,14 +456,18 @@
     tw.classList.toggle('zebra', !!st.zebra); tw.classList.toggle('wrap', !!st.wrap);
   }
 
-  // === Inicio
+  // Inicio
   applyView();
   buildOnce();
-  // set total visible al principio
-  $('#chip-count').textContent = `${data.length} pasajer@/s`;
-  // aplica freeze guardado (si existe)
+  applyFilter();
   stableFreeze(true);
 
+  // Filtros + debounce para buscador
+  const debFilter=debounce(applyFilter,150);
+  $('#q').addEventListener('input', debFilter);
+  $('#f-semaforo').addEventListener('change', applyFilter);
+  $('#f-asist').addEventListener('change', applyFilter);
+  $('#f-migr').addEventListener('change', applyFilter);
 })();
 </script>
 </body>
